@@ -1,3 +1,4 @@
+VIEWS
 def detail (request): 
     if request.user.is_authenticated: # Kiểm tra xem người dùng đã đăng nhập hay chưa
         customer = request.user # Nếu người dùng đã đăng nhập, lấy đối tượng người dùng từ request       
@@ -138,4 +139,94 @@ def updateItem(request):
         orderNhanvien.delete() #Xóa mục orderNhanvien khỏi database nếu không còn giá trị hợp lệ.
 
     return JsonResponse('Item updated successfully', safe=False) #Gửi phản hồi JSON về client
+
+
+MODELS
+class Category(models.Model): #Lớp này đại diện cho một bảng trong cơ sở dữ liệu để lưu trữ thông tin về các danh mục sản phẩm.
+    sup_category = models.ForeignKey('self',on_delete=models.CASCADE,related_name='sub_categories',null=True,blank=True) .
+    is_sub = models.BooleanField(default=False) #để xác định liệu một danh mục có phải là một danh mục con hay không.
+    name = models.CharField(max_length=200,null=True) #Trường này lưu trữ tên của danh mục, với độ dài tối đa là 200 ký tự.
+    slug = models.SlugField(max_length=200,unique=True) #Trường này lưu trữ một slug để xây dựng URL cho danh mục đó
+    def __str__(self): #xác định cách hiển thị một đối tượng khi được in ra
+        return self.name
+class CreateUserForm(UserCreationForm):#CreateUserForm là một lớp kế thừa từ UserCreationForm
+    class Meta: #Một lớp nội bộ để định cấu hình meta-data cho form.
+        model = User #Xác định mô hình Django là mô hình User
+        fields = ['username','email','first_name','last_name','password1','password2'] #là danh sách các trường mà form sẽ yêu cầu người dùng điền
+class Nhanvien(models.Model): #lớp Nhanvien kế thừa từ models.Model
+     category = models.ManyToManyField(Category, related_name='nhanvien') # Tạo mối quan hệ nhiều-nhiều giữa Nhanvien và Category
+     name = models.CharField(max_length=200,null=True) #ưu trữ tên của nhân viên (hoặc sản phẩm/dịch vụ).
+     price = models.CharField(max_length=200, null=False, default="0") #Lưu trữ giá trị (có thể là giá lương, giá dịch vụ, giá sản phẩm).
+     image = models.ImageField(null=True,blank=True) #Lưu trữ hình ảnh của nhân viên (hoặc sản phẩm/dịch vụ).
+     detail = models.TextField(null=True,blank=True) #Lưu trữ mô tả chi tiết về nhân viên (hoặc sản phẩm/dịch vụ).
+
+     @property
+     def imageurl(self):
+        try:
+            return self.image.url
+        except ValueError:
+            return ''
+     def __str__(self):
+        return self.name   
+     
+        
+class Order(models.Model):
+     customer = models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True) #Lưu trữ thông tin về khách hàng liên quan đến đơn hàng.
+     date_order = models.DateTimeField(auto_now_add=True) #Lưu trữ thời gian đặt hàng của khách hàng
+     complete = models.BooleanField(default=False,null=True,blank=False) #Lưu trữ trạng thái hoàn tất của đơn hàng
+     transaction_id = models.CharField(max_length=200,null=True) #Lưu trữ mã giao dịch (transaction ID) của đơn hàng.
+
+
+     def __str__(self):
+          return str(self.id)
+     @property
+     def get_cart_items(self):  Tính toán và trả về tổng diện tích (hoặc một giá trị tổng hợp khác) của các mục trong giỏ hàng của khách hàng.
+        order_nhanviens = self.order_nhanvien_set.all()  # Đảm bảo là `order_nhanvien_set` chứ không phải `ordernhanvien_set`
+        total_area = sum([item.dientich for item in order_nhanviens])  # Tổng diện tích
+        return total_area
+
+     @property
+     def get_cart_total(self):
+        order_nhanviens = self.order_nhanvien_set.all() #Lấy tất cả các mục liên quan đến đơn hàng của người dùng 
+# Đảm bảo là `order_nhanvien_set` chứ không phải `ordernhanvien_set`
+        total_value = sum([item.get_total for item in order_nhanviens])  # Tổng giá trị #Tính toán tổng giá trị (có thể là tổng tiền hoặc tổng chi phí) của tất cả các mục trong giỏ hàng.
+        return total_value # Trả về tổng giá trị của giỏ hàng (hoặc tổng chi phí) sau khi tính toán.
+
+class Order_nhanvien(models.Model):
+     nhanvien = models.ForeignKey(Nhanvien,on_delete=models.SET_NULL,null=True,blank=True) #lưu trữ mối quan hệ giữa đối tượng Order_nhanvien và đối tượng Nhanvien
+     order = models.ForeignKey(Order,on_delete=models.SET_NULL,null=True,blank=True) #Trường này lưu trữ mối quan hệ giữa đối tượng Order_nhanvien và đơn hàng (Order)
+     dientich=models.IntegerField(default=0, null=True, blank=True) #Trường này lưu trữ diện tích (hoặc số lượng) của mục trong đơn hàng.
+     date_added = models.DateTimeField(auto_now_add=True) #Lưu trữ ngày giờ mà mục này được thêm vào đơn hàng.
+     @property
+     def get_total(self):#tính toán tổng giá trị của mục trong đơn hàng, dựa trên giá của Nhanvien và diện tích (hoặc số lượng) mà người dùng đã chọn.
+          total = float(self.nhanvien.price) * float(self.dientich)
+          return total
+
+class Address(models.Model):
+     customer = models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True) # Trường này lưu trữ thông tin người dùng (khách hàng) mà địa chỉ này thuộc về.
+     order = models.ForeignKey(Order,on_delete=models.SET_NULL,null=True,blank=True) #lưu trữ thông tin về đơn hàng mà địa chỉ này liên quan đến
+     address = models.CharField(max_length=200,null=True) #Lưu trữ thông tin địa chỉ cụ thể (số nhà, tên đường, v.v.).
+     city = models.CharField(max_length=200,null=True) #Lưu trữ tên thành phố hoặc khu vực mà địa chỉ thuộc về.
+     state = models.CharField(max_length=200,null=True) #Lưu trữ tên tỉnh hoặc quốc gia mà địa chỉ thuộc về.
+     sdt = models.CharField(max_length=11,null=True) #Lưu trữ số điện thoại liên hệ của người nhận tại địa chỉ này
+     date_added = models.DateTimeField(auto_now_add=True) # Lưu trữ thời gian khi địa chỉ này được thêm vào hệ thống.
+      
+     def __str__(self):
+          return self.address    
+
+URLS
+urlpatterns = [
+    path('', views.home, name="home"),#Định nghĩa URL mặc định cho trang chủ của ứng dụng.
+    path('register', views.register, name="register"), #Định nghĩa URL cho trang đăng ký tài khoản người dùng.
+    path('login/', views.loginPage, name="login"), #Định nghĩa URL cho trang đăng nhập
+    path('category/', views.category, name="category"), #Định nghĩa URL cho trang danh mục sản phẩm (hoặc dịch vụ).
+    path('detail/', views.detail, name="detail"), #Định nghĩa URL cho trang chi tiết sản phẩm hoặc dịch vụ.
+    path('search/', views.search, name="search"), #Định nghĩa URL cho trang tìm kiếm.
+    path('logout/', views.logoutPage, name="logout"), #Định nghĩa URL để đăng xuất người dùng
+    path('cart/', views.cart, name="cart"), #Định nghĩa URL cho trang giỏ hàng của người dùng.
+    path('checkout/', views.checkout, name="checkout"), #Định nghĩa URL cho trang thanh toán của đơn hàng.
+    path('update_item/', views.updateItem, name="update_item"),#Định nghĩa URL cho việc cập nhật mục trong giỏ hàng (thêm, xóa hoặc thay đổi số lượng sản phẩm).
+]
+
+
 
