@@ -1,120 +1,141 @@
-import tkinter as tk
-from tkinter import ttk, messagebox
-import csv
-import pandas as pd
-from datetime import datetime
+def detail (request): 
+    if request.user.is_authenticated: # Kiểm tra xem người dùng đã đăng nhập hay chưa
+        customer = request.user # Nếu người dùng đã đăng nhập, lấy đối tượng người dùng từ request       
+        order, created= Order.objects.get_or_create(customer= customer,complete=False) # Tìm kiếm hoặc tạo một đơn hàng (Order) chưa hoàn thành cho khách hàng này
+        items= order.order_nhanvien_set.all()  # Lấy tất cả các mục (items) trong đơn hàng liên quan đến nhân viên
+        user_not_login ="hidden" # Thiết lập biến cho trường hợp người dùng chưa đăng nhập
+        user_login ="show" # Thiết lập biến cho trường hợp người dùng đã đăng nhập
+    else: # Nếu người dùng chưa đăng nhập, gán giá trị mặc định cho các biến
+        items=[] # Danh sách các mục trong giỏ hàng sẽ là rỗng    
+        order={'get_cart_items':0,'get_cart_total':0} # Đơn hàng mặc định, không có sản phẩm, tổng giá trị là 0
+        user_not_login ="show" # Giao diện hiển thị thông báo người dùng chưa đăng nhập
+        user_login ="hidden" # Giao diện ẩn phần dành cho người dùng đã đăng nhập
+    id =request.GET.get('id','') # Lấy tham số 'id' từ URL, nếu không có thì mặc định là chuỗi rỗng
+    nhanviens =Nhanvien.objects.filter(id=id) # Lọc danh sách nhân viên (Nhanvien) theo 'id' đã lấy từ URL
+    context= {'items':items,'order':order,'user_not_login':user_not_login, 'user_login':user_login, 'nhanviens': nhanviens} # Chuẩn bị dữ liệu (context) sẽ truyền vào template
+    return render(request, 'app/detail.html', context) # Trả về trang detail.html với dữ liệu context đã chuẩn bị
+def category(request):
+    categories = Category.objects.filter(is_sub=False) # Lấy danh sách các danh mục (Category) không phải là danh mục con (is_sub=False)
+    active_category = request.GET.get('category', '')  # Lấy giá trị tham số 'category' từ URL, nếu không có thì mặc định là chuỗi rỗng
+    nhanvien = [] # Khởi tạo danh sách nhân viên rỗng 
+    if active_category: # Nếu có giá trị 'active_category', tìm nhân viên thuộc danh mục đó
+        nhanvien = Nhanvien.objects.filter(category__slug=active_category)
+    context = {'categories': categories,'nhanvien': nhanvien,'active_category': active_category,}  # Chuẩn bị dữ liệu (context) để truyền vào template
+    return render(request, 'app/category.html', context) # Trả về trang category.html với dữ liệu context
 
-# File CSV để lưu trữ dữ liệu
-FILE_NAME = "nhanvien.csv"
-
-def save_to_csv():
-    """Lưu thông tin nhân viên vào file CSV"""
-    data = [
-        entry_id.get(),
-        entry_name.get(),
-        entry_dob.get(),
-        gender.get(),
-        entry_idnum.get(),
-        entry_issuedate.get(),
-        entry_department.get(),
-        entry_position.get()
-    ]
-    if "" in data:
-        messagebox.showwarning("Lỗi", "Vui lòng nhập đầy đủ thông tin!")
+def search(request):
+    if request.method =="POST": # Kiểm tra xem yêu cầu là POST hay không
+        searched = request.POST["searched"] # Nếu là yêu cầu POST, lấy giá trị từ ô tìm kiếm
+        keys = Nhanvien.objects.filter(name__contains = searched)  # Tìm kiếm nhân viên theo tên có chứa từ khóa đã nhập
+    if request.user.is_authenticated: # Kiểm tra xem người dùng đã đăng nhập hay chưa
+        customer = request.user  # Nếu người dùng đã đăng nhập, lấy đối tượng người dùng
+        order, created= Order.objects.get_or_create(customer= customer,complete=False)  # Tìm kiếm hoặc tạo đơn hàng chưa hoàn thành cho khách hàng này
+        items= order.order_nhanvien_set.all() # Lấy tất cả các nhân viên trong đơn hàng của khách hàng
+        cartItems= order.get_cart_items # Lấy số lượng các mục trong giỏ hàng
     else:
-        with open(FILE_NAME, mode="a", newline="", encoding="utf-8") as file:
-            writer = csv.writer(file)
-            writer.writerow(data)
-        messagebox.showinfo("Thành công", "Dữ liệu đã được lưu!")
-        clear_entries()
+        items=[]  # Nếu người dùng chưa đăng nhập, khởi tạo giỏ hàng rỗng   
+        order={'get_cart_items':0,'get_cart_total':0}  # Đơn hàng rỗng, không có sản phẩm
+        cartItems= order['get_cart_items']  # Số lượng mục trong giỏ hàng là 0
+    nhanviens = Nhanvien.objects.all() # Lấy tất cả các nhân viên từ cơ sở dữ liệu
+    return render(request,'app/search.html',{"searched":searched,"keys":keys,'nhanviens': nhanviens}) # Trả về trang search.html với các giá trị context
+def register(request):
+    form = CreateUserForm  # Khởi tạo form đăng ký người dùng
+    if request.method =="POST": # Kiểm tra xem yêu cầu có phải là POST không (khi người dùng gửi form)
+        form = CreateUserForm(request.POST)  # Nếu yêu cầu là POST, tạo một form mới với dữ liệu gửi lên từ người dùng
+        if form.is_valid(): # Kiểm tra tính hợp lệ của form
+            form.save()  # Nếu form hợp lệ, lưu thông tin người dùng mới vào cơ sở dữ liệu
+            return redirect('login') # Chuyển hướng người dùng đến trang đăng nhập sau khi đăng ký thành công
+    contex = {'form':form} # Truyền form vào context để gửi tới template
+    return render(request,'app/register.html',contex) # Trả về trang register.html với dữ liệu form để hiển thị trên giao diện người dùng
+def loginPage(request):
+    if request.user.is_authenticated: # Kiểm tra xem người dùng đã đăng nhập chưa
+        return redirect('home') # Nếu người dùng đã đăng nhập, chuyển hướng đến trang chủ (home)
+    if request.method =="POST": # Kiểm tra xem yêu cầu có phải là POST (khi người dùng gửi form đăng nhập)
+        username = request.POST.get('username')  # Lấy thông tin tên người dùng và mật khẩu từ dữ liệu gửi lên
+        password = request.POST.get('password')
+        user = authenticate(request,username =username,password=password)  # Kiểm tra thông tin đăng nhập
+        if user is not None: # Nếu thông tin hợp lệ (người dùng tồn tại)
+            login(request,user)  # Đăng nhập người dùng
+            return redirect('home')  # Chuyển hướng đến trang chủ sau khi đăng nhập thành công
+        else: 
+            messages.info(request,'Tên đăng nhập hoặc tài khoản sai!') #dùng để tạo thông báo với mức độ "thông tin" cho người dùng
+    contex = {} #Tạo một từ điển rỗng
+    return render(request,'app/login.html',contex) 
+def logoutPage(request):
+    logout(request) #dùng để đăng xuất người dùng
+    return redirect('login') #chuyển hướng người dùng đến trang đăng nhập
+def home(request):
+    if request.user.is_authenticated: #kiểm tra xem người dùng có đăng nhập hay không
+        customer = request.user #Lấy đối tượng người dùng từ request.user 
+        order, created= Order.objects.get_or_create(customer= customer,complete=False) #kiểm tra xem người dùng có một đơn hàng chưa hoàn thành
+        items= order.order_nhanvien_set.all() #lấy tất cả các nhân viên liên quan đến đơn hàng này
+        cartItems= order.get_cart_items #Lấy tổng số mục trong giỏ hàng
+        user_not_login ="hidden" #ẩn các phần tử dành cho người dùng chưa đăng nhập.
+        user_login ="show" #hiển thị các phần tử dành cho người dùng đã đăng nhập
+    else:
+        items=[] # là một danh sách rỗng.   
+        order={'get_cart_items':0,'get_cart_total':0} 
+        cartItems= order['get_cart_items'] #để hiển thị số lượng mục trong giỏ hàng.
+        user_not_login ="show" #dành cho người chưa đăng nhập sẽ được hiển thị.
+        user_login ="hidden" #dành cho người đã đăng nhập sẽ bị ẩn đi.
+    categories = Category.objects.filter(is_sub =False) #lọc ra các danh mục không phải là danh mục con, chỉ lấy các danh mục chính
+    nhanviens = Nhanvien.objects.all() #lấy tất cả các đối tượng Nhanvien từ cơ sở dữ liệu 
+    context= {'nhanviens': nhanviens ,'user_not_login':user_not_login, 'user_login':user_login,'categories':categories} #Tạo một từ điển để truyền dữ liệu vào template
+    return render(request, 'app/home.html', context) 
+def cart(request):
+    if request.user.is_authenticated: #kiểm tra xem người dùng hiện tại có đang đăng nhập hay không
+        customer = request.user #Gán người dùng hiện tại (đã đăng nhập) vào biến 
+        order, created= Order.objects.get_or_create(customer= customer,complete=False) #Tìm hoặc tạo một đơn hàng cho người dùng hiện tại
+        items= order.order_nhanvien_set.all() #Lấy tất cả các sản phẩm (Order_nhanvien) liên kết với đơn hàng hiện tại và gán vào biến items.
+        user_not_login ="hidden" #Ẩn các phần tử chỉ dành cho người dùng đã đăng nhập.
+        user_login ="show" #Hiển thị các phần tử chỉ dành cho người dùng đã đăng nhập.
+    else:
+        items=[] # là một danh sách rỗng   
+        order={'get_cart_items':0,'get_cart_total':0} #lưu trữ thông tin về đơn hàng
+        user_not_login ="show" #hiển thị các phần tử giao diện dành cho người dùng chưa đăng nhập.
+        user_login ="hidden" #ẩn các phần tử giao diện dành cho người dùng đã đăng nhập
+    context= {'items':items,'order':order,'user_not_login':user_not_login, 'user_login':user_login} #để truyền dữ liệu vào template
+    return render(request, 'app/cart.html', context) #hiển thị giao diện giỏ hàng phù hợp cho người dùng chưa đăng nhập.
+def checkout(request):
+    if request.user.is_authenticated: #kiểm tra xem người dùng có đăng nhập hay chưa
+        customer = request.user #Gán thông tin của người dùng hiện tại vào biến
+        order, created= Order.objects.get_or_create(customer= customer,complete=False) #Tìm hoặc tạo một đơn hàng
+        items= order.order_nhanvien_set.all() #Lấy danh sách các sản phẩm trong đơn hàng:
+        user_not_login ="hidden" #Ẩn các phần tử dành cho người dùng chưa đăng nhập.
+        user_login ="show" #Hiển thị các phần tử dành cho người dùng đã đăng nhập
+    else:
+        items=[]    
+        order={'get_cart_items':0,'get_cart_total':0} #giá trị mặc định cho người dùng chưa đăng nhập (chưa có giỏ hàng).
+        user_not_login ="show" #hiển thị dành cho người dùng chưa đăng nhập.
+        user_login ="hidden" #hiển thị dành cho người dùng đã đăng nhập.
+    context= {'items':items,'order':order, 'user_not_login':user_not_login, 'user_login':user_login} #Là một dictionary chứa các dữ liệu cần truyền
+    return render(request, 'app/checkout.html', context) #sẽ hiển thị thông tin phù hợp dựa trên trạng thái đăng nhập của người dùng.
+from django.http import JsonResponse
+import json
 
-def load_birthdays_today():
-    """Hiển thị nhân viên có sinh nhật hôm nay"""
-    try:
-        today = datetime.now().strftime("%d/%m")
-        with open(FILE_NAME, mode="r", encoding="utf-8") as file:
-            reader = csv.reader(file)
-            birthdays = [row for row in reader if row[2][:5] == today]
-        if birthdays:
-            result = "\n".join([f"Mã: {row[0]}, Tên: {row[1]}" for row in birthdays])
-            messagebox.showinfo("Sinh nhật hôm nay", result)
-        else:
-            messagebox.showinfo("Sinh nhật hôm nay", "Không có nhân viên nào sinh nhật hôm nay.")
-    except FileNotFoundError:
-        messagebox.showerror("Lỗi", "Chưa có dữ liệu nhân viên!")
+def updateItem(request):
+    data = json.loads(request.body)
+    nhanvienId = data['nhanvienId'] #Lấy ID của nhân viên từ dữ liệu JSON.
+    action = data['action'] #Lấy hành động cụ thể được gửi từ client 
 
-def export_to_excel():
-    """Xuất toàn bộ danh sách nhân viên ra file Excel và sắp xếp theo tuổi giảm dần"""
-    try:
-        df = pd.read_csv(FILE_NAME, names=["Mã", "Tên", "Ngày sinh", "Giới tính", "Số CMND",
-                                          "Ngày cấp", "Đơn vị", "Chức danh"])
-        df["Tuổi"] = pd.to_datetime(df["Ngày sinh"], dayfirst=True).apply(
-            lambda x: datetime.now().year - x.year if pd.notnull(x) else 0
-        )
-        df_sorted = df.sort_values(by="Tuổi", ascending=False)
-        df_sorted.to_excel("danhsach_nhanvien.xlsx", index=False)
-        messagebox.showinfo("Thành công", "Dữ liệu đã được xuất ra file Excel: danhsach_nhanvien.xlsx")
-    except FileNotFoundError:
-        messagebox.showerror("Lỗi", "Chưa có dữ liệu nhân viên!")
+    customer = request.user #Lấy thông tin người dùng hiện tại
+    nhanvien = Nhanvien.objects.get(id=nhanvienId) #Truy vấn thông tin nhân viên từ database dựa trên ID nhận được
 
-def clear_entries():
-    """Xóa các trường nhập liệu"""
-    entry_id.delete(0, tk.END)
-    entry_name.delete(0, tk.END)
-    entry_dob.delete(0, tk.END)
-    entry_idnum.delete(0, tk.END)
-    entry_issuedate.delete(0, tk.END)
-    entry_department.set("")
-    entry_position.delete(0, tk.END)
+    order, created = Order.objects.get_or_create(customer=customer, complete=False) #Tìm hoặc tạo một đơn hàng chưa hoàn thành cho người dùng hiện tại
+    orderNhanvien, created = Order_nhanvien.objects.get_or_create(order=order, nhanvien=nhanvien) #Tìm hoặc tạo một mục trong đơn hàng cho nhân viên tương ứng
 
-# Tạo cửa sổ chính
-root = tk.Tk()
-root.title("Quản lý thông tin nhân viên")
-root.geometry("500x600")
+    # Cập nhật diện tích
+    if action == 'add': #Nếu hành động là 'add', tăng giá trị dientich (diện tích) lên 1.
+        orderNhanvien.dientich += 1
+    elif action == 'remove': #Nếu hành động là 'remove', giảm giá trị dientich xuống 1.
+        orderNhanvien.dientich -= 1
 
-# Các trường nhập liệu
-tk.Label(root, text="Mã nhân viên").pack()
-entry_id = tk.Entry(root)
-entry_id.pack()
+    # Lưu lại sau khi cập nhật
+    orderNhanvien.save() #Lưu các thay đổi đã cập nhật vào database.
 
-tk.Label(root, text="Tên nhân viên").pack()
-entry_name = tk.Entry(root)
-entry_name.pack()
+    # Nếu diện tích <= 0, xóa bản ghi
+    if orderNhanvien.dientich <= 0: #Kiểm tra nếu (diện tích) nhỏ hơn hoặc bằng 0.
+        orderNhanvien.delete() #Xóa mục orderNhanvien khỏi database nếu không còn giá trị hợp lệ.
 
-tk.Label(root, text="Ngày sinh (dd/mm/yyyy)").pack()
-entry_dob = tk.Entry(root)
-entry_dob.pack()
+    return JsonResponse('Item updated successfully', safe=False) #Gửi phản hồi JSON về client
 
-tk.Label(root, text="Giới tính").pack()
-gender = tk.StringVar(value="Nam")
-tk.Radiobutton(root, text="Nam", variable=gender, value="Nam").pack()
-tk.Radiobutton(root, text="Nữ", variable=gender, value="Nữ").pack()
-
-tk.Label(root, text="Số CMND").pack()
-entry_idnum = tk.Entry(root)
-entry_idnum.pack()
-
-tk.Label(root, text="Ngày cấp (dd/mm/yyyy)").pack()
-entry_issuedate = tk.Entry(root)
-entry_issuedate.pack()
-
-tk.Label(root, text="Đơn vị").pack()
-entry_department = ttk.Combobox(root, values=["Phòng kế toán", "Phòng kỹ thuật", "Phân xưởng que hàn"])
-entry_department.pack()
-
-tk.Label(root, text="Chức danh").pack()
-entry_position = tk.Entry(root)
-entry_position.pack()
-
-# Các nút chức năng
-btn_save = tk.Button(root, text="Lưu thông tin", command=save_to_csv)
-btn_save.pack(pady=5)
-
-btn_birthdays = tk.Button(root, text="Sinh nhật hôm nay", command=load_birthdays_today)
-btn_birthdays.pack(pady=5)
-
-btn_export = tk.Button(root, text="Xuất danh sách Excel", command=export_to_excel)
-btn_export.pack(pady=5)
-
-# Khởi chạy chương trình
-root.mainloop()
